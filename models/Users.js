@@ -1,4 +1,3 @@
-
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
@@ -11,7 +10,7 @@ const userSchema = new mongoose.Schema({
   telephone: { 
     type: String, 
     required: [true, "Le téléphone est obligatoire"],
-    unique: true, // Empêche les doublons
+    unique: true,
     trim: true 
   },
   password: { 
@@ -26,18 +25,21 @@ const userSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-userSchema.pre("save", async function(next) {
-  if (!this.isModified("password")) return next();
+// Modifié : Plus besoin de "next" avec async/await !
+userSchema.pre("save", async function() {
+  // Si le mot de passe n'a pas changé, on quitte simplement la fonction (sans next)
+  if (!this.isModified("password")) return;
   
   try {
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
-    next(); // ✅ On appelle next() une fois fini
+    // ✅ Plus besoin de appeler next(), Mongoose sait que c'est fini dès que le try se termine
   } catch (err) {
-    console.log(err);
-    next(err); // 🛑 On passe l'erreur à next pour que MongoDB ne sauvegarde pas n'importe quoi
+    console.error("Erreur de hachage:", err);
+    throw err; // 🛑 Au lieu de next(err), on "throw" l'erreur pour bloquer la sauvegarde
   }
 });
+
 // Méthode pour comparer les mots de passe lors du login
 userSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
