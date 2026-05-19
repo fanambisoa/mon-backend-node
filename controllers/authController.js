@@ -2,11 +2,11 @@ const User = require("../models/Users");
 const jwt = require("jsonwebtoken");
 
 // --- Fonction Register ---
-const register = async (req, res, next) => { // Ajout de next ici
+const register = async (req, res, next) => {
   try {
     const { nom, telephone, password, role } = req.body;
     
-    // Vérification des champs obligatoires pour éviter une erreur 500
+    // Validation des champs
     if (!telephone || !password) {
       return res.status(400).json({ message: "Téléphone et mot de passe requis" });
     }
@@ -16,20 +16,27 @@ const register = async (req, res, next) => { // Ajout de next ici
       return res.status(400).json({ message: "Ce numéro est déjà utilisé" });
     }
 
+    // Le hashage du mot de passe doit idéalement être géré dans ton modèle (Users.js) avec un hook .pre('save')
     const newUser = new User({ nom, telephone, password, role });
     await newUser.save();
 
-    res.status(201).json({ message: "Utilisateur créé avec succès" });
+    return res.status(201).json({ message: "Utilisateur créé avec succès" });
+
   } catch (err) {
-    // Au lieu de res.status(500), on peut passer l'erreur au middleware global
-    // ou rester sur res.status(500) si tu n'as pas de gestionnaire d'erreurs global.
-    console.error("Erreur Register:", err);
-    res.status(500).json({ message: err.message });
+    console.error("Erreur Register détaillée:", err);
+    
+    // SÉCURITÉ : Si un middleware d'erreur global n'est pas configuré dans ton server.js,
+    // appeler next(err) provoquera un crash "next is not a function" ou une page HTML vide.
+    // On répond donc directement de manière sécurisée ici.
+    return res.status(500).json({ 
+      message: "Erreur lors de la création du compte", 
+      error: err.message 
+    });
   }
 };
 
 // --- Fonction Login ---
-const login = async (req, res, next) => { // Ajout de next ici
+const login = async (req, res, next) => {
   try {
     const { telephone, password } = req.body;
 
@@ -44,15 +51,22 @@ const login = async (req, res, next) => { // Ajout de next ici
     }
 
     // 2. Vérifier le mot de passe
-    // S'assure que comparePassword existe dans le modèle User.js
+    // ⚠️ ALERTE ERREUR 500 COMMUNE : Si "comparePassword" n'est pas défini dans ton fichier models/Users.js,
+    // cette ligne fait planter ton serveur instantanément (TypeError: user.comparePassword is not a function).
+    if (typeof user.comparePassword !== "function") {
+      console.error("💥 ERREUR : La méthode comparePassword n'existe pas sur le modèle User !");
+      return res.status(500).json({ message: "Configuration du serveur incomplète (mot de passe)" });
+    }
+
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
       return res.status(401).json({ message: "Identifiants invalides" });
     }
 
-    // 3. Générer le Token (Vérifie que JWT_SECRET est bien dans ton .env)
+    // 3. Générer le Token (Vérification de la clé secrète)
     if (!process.env.JWT_SECRET) {
-      throw new Error("JWT_SECRET is not defined in environment variables");
+      console.error("💥 ERREUR : La variable d'environnement JWT_SECRET est manquante sur Render !");
+      return res.status(500).json({ message: "Erreur de configuration de sécurité du serveur" });
     }
 
     const token = jwt.sign(
@@ -62,7 +76,7 @@ const login = async (req, res, next) => { // Ajout de next ici
     );
 
     // 4. Envoyer la réponse
-    res.json({
+    return res.json({
       token,
       user: {
         id: user._id,
@@ -73,8 +87,11 @@ const login = async (req, res, next) => { // Ajout de next ici
     });
 
   } catch (error) {
-    console.error("Erreur Login:", error);
-    res.status(500).json({ message: "Erreur lors de la connexion" });
+    console.error("Erreur Login détaillée:", error);
+    return res.status(500).json({ 
+      message: "Erreur interne lors de la connexion",
+      error: error.message 
+    });
   }
 };
 
